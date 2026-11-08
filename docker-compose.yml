@@ -1,0 +1,48 @@
+# DocuSeal + PostgreSQL + Caddy (HTTPS). Эпизод 43, канал @ByteAutomate_AI.
+# Автор стек на живом сервере НЕ запускал: теги образов, переменные и пути сверьте с официальной документацией DocuSeal.
+# Запуск: cp .env.example .env, заполнить, затем docker compose up -d
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: docuseal
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: docuseal
+    volumes:
+      # внешний (постоянный) том для базы: без него данные исчезнут при пересоздании контейнера
+      - ./pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docuseal -d docuseal"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    image: docuseal/docuseal:latest   # после первого успешного запуска закрепите версию
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://docuseal:${POSTGRES_PASSWORD}@postgres:5432/docuseal
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET}
+      FORCE_SSL: ${HOST}
+    volumes:
+      # файлы документов и настройки приложения
+      - ./docuseal:/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    command: caddy reverse-proxy --from ${HOST} --to app:3000
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      HOST: ${HOST}
+    volumes:
+      - ./caddy:/data
